@@ -2,11 +2,12 @@ from aqt import mw, utils, browser
 from aqt.qt import *
 from aqt import editor
 from anki import notes
-from anki.utils import intTime, ids2str
+from anki.utils import intTime, ids2str, isWin
 import platform
 import sys
-from os.path import expanduser
+from os.path import expanduser, join
 import os
+from pickle import load, dump
 
 template_before="""
     <!DOCTYPE html>
@@ -33,6 +34,13 @@ class AddonDialog(QDialog):
     """Main Options dialog"""
     def __init__(self):
         QDialog.__init__(self, parent=mw)
+        if os.path.exists('deck_field_dict'):
+            try:
+                self.map = load(open('deck_field_dict', 'rb'))
+            except:
+                self.map = {}
+        else:
+            self.map = {}
         self.path = None
         self.deck = None
         self.fields = {}
@@ -49,9 +57,7 @@ class AddonDialog(QDialog):
     def _setup_ui(self):
         """Set up widgets and layouts"""
         deck_label = QLabel("Choose deck")
-        field_label = QLabel("Field 1")
         self.labels = []
-        self.labels.append(field_label)
 
         self.deck_selection = QComboBox()
         deck_names = sorted(mw.col.decks.allNames())
@@ -64,21 +70,14 @@ class AddonDialog(QDialog):
         self.deck_selection.addItems(deck_names)
         self.deck_selection.currentIndexChanged.connect(self._select_deck)
 
+        self.deck = self.deck_selection.currentText()
         self.field_selections = []
-        field_selection = QComboBox()
-        field_selection.addItems(self._select_fields())
-        self.field_selections.append(field_selection)
-        ## field_selection.addItems()
+        self._add_field_selection(self.deck)
 
         self.add_field_button = QPushButton('+')
         self.add_field_button.clicked.connect(self._add_field)
         self.remove_field_button = QPushButton('-')
         self.remove_field_button.clicked.connect(self._remove_field)
-        self.field_cnt = 1
-
-        self.textbox_label = QLabel('Attached css')
-        self.textbox = QTextEdit(self)
-        self.textbox.resize(380,60)
 
         self.grid = QGridLayout()
         self.grid.setSpacing(10)
@@ -87,10 +86,11 @@ class AddonDialog(QDialog):
         self.grid.addWidget(self.add_field_button, 1, 2)
         self.grid.addWidget(self.remove_field_button, 1, 3)
 
-        self.grid.addWidget(field_label, 2, 0)
-        self.grid.addWidget(field_selection, 2, 1)
-        self.grid.addWidget(self.textbox_label, 3, 0)
-        self.grid.addWidget(self.textbox)
+        self.textbox_label = QLabel('Attached css')
+        self.textbox = QTextEdit(self)
+        self.textbox.resize(380,60)
+
+        self._layout()
 
         # Main button box
         button_box = QDialogButtonBox(QDialogButtonBox.Ok
@@ -107,10 +107,41 @@ class AddonDialog(QDialog):
         self.setWindowTitle('Find words and create deck')
 
 
+    def _layout(self):
+        for i, (l, f) in enumerate(zip(self.labels, self.field_selections)):
+            self.grid.addWidget(l, 2 + i, 0)
+            self.grid.addWidget(f, 2 + i, 1)
+
+        field_cnt = len(self.labels)
+        self.grid.addWidget(self.textbox_label, 2 + field_cnt, 0)
+        self.grid.addWidget(self.textbox, 2 + field_cnt, 1)
+
+
+    def _add_field_selection(self, deck):
+        if deck in self.map:
+            for i, field in enumerate(self.map[deck]):
+                self.labels.append(QLabel("Field %d" % (i + 1)))
+                field_selection = QComboBox()
+                fields = self._select_fields()
+                fields.insert(0, field)
+                field_selection.addItems(fields)
+                self.field_selections.append(field_selection)
+        else:
+            self.labels.append(QLabel("Field 1"))
+            field_selection = QComboBox()
+            fields = self._select_fields()
+            field_selection.addItems(fields)
+            self.field_selections.append(field_selection)
+
+
     def _select_fields(self):
-        self.deck = self.deck_selection.currentText()
         query = 'deck:"{}"'.format(self.deck)
-        card_id = mw.col.findCards(query=query)[0]
+        try:
+            card_id = mw.col.findCards(query=query)[0]
+        except:
+            utils.showInfo("This deck has no cards.")
+            return []
+
         card = mw.col.getCard(card_id)
 
         note = card.note()
@@ -120,18 +151,18 @@ class AddonDialog(QDialog):
     
 
     def _add_field(self):
-        self.field_cnt += 1
-        field_label = QLabel("Field " + str(self.field_cnt))
+        field_cnt = len(self.labels)
+        field_label = QLabel("Field %d " % (field_cnt))
         field_selection = QComboBox()
         field_selection.addItems(self._select_fields())
-        self.grid.addWidget(field_label, self.field_cnt + 1, 0)
-        self.grid.addWidget(field_selection, self.field_cnt + 1, 1)
+        self.grid.addWidget(field_label, field_cnt + 2, 0)
+        self.grid.addWidget(field_selection, field_cnt + 2, 1)
 
         self.grid.removeWidget(self.textbox_label)
         self.grid.removeWidget(self.textbox)
 
-        self.grid.addWidget(self.textbox_label, self.field_cnt + 2, 0)
-        self.grid.addWidget(self.textbox, self.field_cnt + 2, 1)
+        self.grid.addWidget(self.textbox_label, field_cnt + 3, 0)
+        self.grid.addWidget(self.textbox, field_cnt + 3, 1)
         self.field_selections.append(field_selection)
         self.labels.append(field_label)
     
@@ -139,24 +170,35 @@ class AddonDialog(QDialog):
     def _remove_field(self):
         if len(self.labels) <= 1 or len(self.field_selections) <= 1:
             return
-        self.field_cnt -= 1
         field_label = self.labels.pop()
         field_selection = self.field_selections.pop()
+        field_cnt = len(self.labels)
         self.grid.removeWidget(field_label)
         self.grid.removeWidget(field_selection)
         self.grid.removeWidget(self.textbox_label)
         self.grid.removeWidget(self.textbox)
-        self.grid.addWidget(self.textbox_label, self.field_cnt + 2, 0)
-        self.grid.addWidget(self.textbox, self.field_cnt + 2, 1)
+        self.grid.addWidget(self.textbox_label, field_cnt + 2, 0)
+        self.grid.addWidget(self.textbox, field_cnt + 2, 1)
         field_label.deleteLater()
         field_selection.deleteLater()
 
 
     def _select_deck(self):
+        self.deck = self.deck_selection.currentText()
         fields = self._select_fields()
-        for field_selection in self.field_selections:
-            field_selection.clear()
-            field_selection.addItems(fields)
+        if len(fields) == 0:
+            return
+        for label, field in zip(self.labels, self.field_selections):
+            self.grid.removeWidget(label)
+            self.grid.removeWidget(field)
+            label.deleteLater()
+            field.deleteLater()
+        self.grid.removeWidget(self.textbox_label)
+        self.grid.removeWidget(self.textbox)
+        self.labels = []
+        self.field_selections = []
+        self._add_field_selection(self.deck_selection.currentText())
+        self._layout()
 
 
     def _on_accept(self):
@@ -181,35 +223,43 @@ class AddonDialog(QDialog):
         if len(selected_fields) == 0:
             for field_selection in self.field_selections:
                 selected_fields.append(field_selection.currentText())
+
+        ## dump file to save selected fields
+        self.map[self.deck] = selected_fields
+        dump_file = open('deck_field_dict', 'wb')
+        dump(self.map, dump_file)
+
         css_text = css_text[split+len(delimiter):]
         deck = self.deck_selection.currentText()
         query = 'deck:"{}"'.format(deck)
         cids = mw.col.findCards(query=query)
         if sys.version_info[0] >= 3:
             path = path[0]
-            #utils.showInfo(str(path))
-        with open(path, "w") as f:
-            edited_template = ""
-            for i, cid in enumerate(cids):
-                card = mw.col.getCard(cid)
-                edited_template += """
-                    <div><strong>{{id}}</strong></div>
-                """
-                edited_template = edited_template.replace("{{id}}", str(i+1))
-                for fi, field in enumerate(selected_fields):
-                    value = card.note()[field]
-                    if "|" in value:
-                        value = convert_to_multiple_choices(value)
-                    if field == "Sentence" and value != "":
-                        value += "<br>"
+        try:
+            with open(path, "w") as f:
+                edited_template = ""
+                for i, cid in enumerate(cids):
+                    card = mw.col.getCard(cid)
                     edited_template += """
-                        <div class="field{{id}}">{{field}}</div>
+                        <div><strong>{{id}}</strong></div>
                     """
-                    edited_template = edited_template.replace("{{field}}", value).replace("{{id}}", str(fi + 1))
-                edited_template += '-----------------------------------<br>'
-                #utils.showInfo(str(cid))
-            f.write(str(template_before.replace("{{main_style}}", css_text) + edited_template + template_after))
-        utils.showInfo("Export to HTML successfully")
+                    edited_template = edited_template.replace("{{id}}", str(i+1))
+                    for fi, field in enumerate(selected_fields):
+                        value = card.note()[field]
+                        if "|" in value:
+                            value = convert_to_multiple_choices(value)
+                        if field == "Sentence" and value != "":
+                            value += "<br>"
+                        edited_template += """
+                            <div class="field{{id}}">{{field}}</div>
+                        """
+                        edited_template = edited_template.replace("{{field}}", value).replace("{{id}}", str(fi + 1))
+                    edited_template += '-----------------------------------<br>'
+                    #utils.showInfo(str(cid))
+                f.write(str(template_before.replace("{{main_style}}", css_text) + edited_template + template_after))
+                utils.showInfo("Export to HTML successfully")
+        except IOError:
+            utils.showInfo("Filename cannot special characters.")
 
 
     def _on_reject(self):
@@ -237,7 +287,8 @@ class SaveFileDialog(QDialog):
     def _get_file(self):
         options = QFileDialog.Options()
         options |= QFileDialog.DontUseNativeDialog
-        directory = os.path.join(expanduser("~/Desktop"), self.default_filename + ".html")
+        default_filename = self.default_filename.replace('::', '_')
+        directory = os.path.join(expanduser("~/Desktop"), default_filename + ".html")
         try:
             path = QFileDialog.getSaveFileName(self, "Save File", directory, "All Files (*)", options=options)
             if path:

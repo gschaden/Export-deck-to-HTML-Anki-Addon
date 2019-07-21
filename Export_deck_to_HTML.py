@@ -142,6 +142,7 @@ class AddonDialog(QDialog):
         self.config[self.deck_selection.currentText()]['html_text'] = self.html_tb.toPlainText()
         self.config[self.deck_selection.currentText()]['css_text'] = self.css_tb.toPlainText()
         dump(self.config, open(self.config_file, 'wb'))
+        utils.showInfo("Config saved")
 
 
     def _convert_to_multiple_choices(self, value):
@@ -177,6 +178,7 @@ class AddonDialog(QDialog):
         deck = self.deck_selection.currentText()
         query = 'deck:"{}"'.format(deck)
         cids = mw.col.findCards(query=query)
+        collection_path = mw.col.media.dir()
         if sys.version_info[0] >= 3:
             path = path[0]
         try:
@@ -192,6 +194,14 @@ class AddonDialog(QDialog):
                         if field == "{{id}}":
                             continue
                         value = card.note()[field[2:-2]]
+                        pictures = re.findall(r'\<img src="(.*?)"', value)
+                        img_tmp = '<img src="%s">'
+                        if len(pictures):
+                            value = ""
+                            for pic in pictures:
+                                full_img_path = os.path.join(collection_path, pic)
+                                img_tag = img_tmp % full_img_path
+                                value += img_tag
                         card_html = card_html.replace("%s" % field, value)
                     html += card_html
 

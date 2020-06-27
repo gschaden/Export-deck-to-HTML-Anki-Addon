@@ -1,20 +1,17 @@
 from aqt import mw, utils, browser
 from aqt.qt import *
-from aqt import editor
-from anki import notes
-from anki.utils import intTime, ids2str, isWin
 from os.path import expanduser, join
 from pickle import load, dump
 
 import os
 import re
-import platform
 import sys
 
 html_template = """
     <!DOCTYPE html>
     <html>
     <head>
+        <meta charset="UTF-8">
         <style>
         {{style}}
         </style>
@@ -182,10 +179,10 @@ class AddonDialog(QDialog):
         if sys.version_info[0] >= 3:
             path = path[0]
         try:
-            with open(path, "w") as f:
+            with open(path, "w", encoding="utf8") as f:
                 html = ""
                 template = self.html_tb.toPlainText()
-                fields = re.findall("\{\{[a-zA-Z0-9_]+\}\}", template)
+                fields = re.findall("\{\{.*\}\}", template)
                 for i, cid in enumerate(cids):
                     card_html = template
                     card_html = card_html.replace("{{id}}", str(i + 1))
@@ -193,15 +190,20 @@ class AddonDialog(QDialog):
                     for fi, field in enumerate(fields):
                         if field == "{{id}}":
                             continue
-                        value = card.note()[field[2:-2]]
-                        pictures = re.findall(r'\<img src="(.*?)"', value)
-                        img_tmp = '<img src="%s">'
+                        try:
+                            value = card.note()[field[2:-2]]
+                        except:
+                            continue
+                        pictures = re.findall(r'src=["|' + "']" + "(.*?)['|" + '"]', value) #to find src='()' or src="()"
+                        img_tmp01 = 'src="%s"'
+                        img_tmp02 = "src='%s'"
                         if len(pictures):
-                            value = ""
+                            #value = ""
                             for pic in pictures:
                                 full_img_path = os.path.join(collection_path, pic)
-                                img_tag = img_tmp % full_img_path
-                                value += img_tag
+                                value = value.replace(img_tmp01 % pic, img_tmp01 % full_img_path)
+                                value = value.replace(img_tmp02 % pic, img_tmp02 % full_img_path)
+                                #value += img_tag
                         card_html = card_html.replace("%s" % field, value)
                     html += card_html
 

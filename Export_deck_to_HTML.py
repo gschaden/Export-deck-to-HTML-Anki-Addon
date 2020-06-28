@@ -164,8 +164,7 @@ class AddonDialog(QDialog):
         note = card.note()
         model = note.model()
         fields = card.note().keys()
-        return fields
-    # Function to convert   
+        return fields 
 
     def _on_accept(self):
         dialog = SaveFileDialog(self.deck_selection.currentText())

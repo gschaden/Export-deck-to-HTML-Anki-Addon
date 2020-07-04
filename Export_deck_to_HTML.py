@@ -187,16 +187,18 @@ class AddonDialog(QDialog):
                     card_html = card_html.replace("{{id}}", str(i + 1))
                     card = mw.col.getCard(cid)
                     for fi, field in enumerate(fields):
+                        anyFieldFound = False #to check if any field matched, otherwise show error message in exported file.
                         if field == "{{id}}":
                             continue
-                        try:
-                            value = card.note()[field[2:-2]]
-                        except:
-                            if field == "{{Front}}":
-                                value = card.note()['Text'] #to support cloze deletion cards/Front
-                            else:
-                                value = card.note()['Extra'] #to support cloze deletion cards/Back
-                            value = re.sub(r'{{[c|C][0-9]+::(.*?)}}',r'\g<1>',value) # get rid of the colze deletion formatting e.g. {{c1::someText}}
+                        fieldNames = field[2:-2].split("//") #for decks that has multiple card types, e.g use {{Front//Text}} or {{Back//Extra}}
+                        for fieldName in fieldNames:
+                            try:
+                                value = card.note()[fieldName]
+                                value = re.sub(r'{{[c|C][0-9]+::(.*?)}}',r'\g<1>',value) # get rid of the cloze deletion formatting e.g. {{c1::someText}}
+                                anyFieldFound = True
+                                break
+                            except:
+                                continue
                         pictures = re.findall(r'src=["|' + "']" + "(.*?)['|" + '"]', value) #to find src='()' or src="()"
                         img_tmp01 = 'src="%s"'
                         img_tmp02 = "src='%s'"
@@ -206,7 +208,15 @@ class AddonDialog(QDialog):
                                 value = value.replace(img_tmp01 % pic, img_tmp01 % full_img_path)
                                 value = value.replace(img_tmp02 % pic, img_tmp02 % full_img_path)
                         card_html = card_html.replace("%s" % field, value)
-                    html += card_html
+                        value = ''
+                    if anyFieldFound:
+                        html += card_html
+                    else:
+                        html += '**************************************************************<br>\n'
+                        html += 'Card Index:' + str(i + 1) + '<br>\n'
+                        html += 'Card type not supported;<br>\n'
+                        html += 'Edit the HTML Template to support these fields: ("' + '-'.join(card.note().keys()) + '").<br>\n'
+                        html += '**************************************************************<br>\n'
 
                 output_html = html_template.replace("{{style}}", self.css_tb.toPlainText())
                 output_html = output_html.replace("{{body}}", html)

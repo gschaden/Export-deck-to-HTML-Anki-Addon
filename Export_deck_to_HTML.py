@@ -1,20 +1,17 @@
 from aqt import mw, utils, browser
 from aqt.qt import *
-from aqt import editor
-from anki import notes
-from anki.utils import intTime, ids2str, isWin
 from os.path import expanduser, join
 from pickle import load, dump
 
 import os
 import re
-import platform
 import sys
 
 html_template = """
     <!DOCTYPE html>
     <html>
     <head>
+        <meta charset="UTF-8">
         <style>
         {{style}}
         </style>
@@ -167,8 +164,7 @@ class AddonDialog(QDialog):
         note = card.note()
         model = note.model()
         fields = card.note().keys()
-        return fields
-
+        return fields 
 
     def _on_accept(self):
         dialog = SaveFileDialog(self.deck_selection.currentText())
@@ -182,28 +178,45 @@ class AddonDialog(QDialog):
         if sys.version_info[0] >= 3:
             path = path[0]
         try:
-            with open(path, "w") as f:
+            with open(path, "w", encoding="utf8") as f:
                 html = ""
                 template = self.html_tb.toPlainText()
-                fields = re.findall("\{\{[a-zA-Z0-9_]+\}\}", template)
+                fields = re.findall("\{\{.*\}\}", template)
                 for i, cid in enumerate(cids):
                     card_html = template
                     card_html = card_html.replace("{{id}}", str(i + 1))
                     card = mw.col.getCard(cid)
                     for fi, field in enumerate(fields):
+                        anyFieldFound = False #to check if any field matched, otherwise show error message in exported file.
                         if field == "{{id}}":
                             continue
-                        value = card.note()[field[2:-2]]
-                        pictures = re.findall(r'\<img src="(.*?)"', value)
-                        img_tmp = '<img src="%s">'
+                        fieldNames = field[2:-2].split("//") #for decks that has multiple card types, e.g use {{Front//Text}} or {{Back//Extra}}
+                        for fieldName in fieldNames:
+                            try:
+                                value = card.note()[fieldName]
+                                value = re.sub(r'{{[c|C][0-9]+::(.*?)}}',r'\g<1>',value) # get rid of the cloze deletion formatting e.g. {{c1::someText}}
+                                anyFieldFound = True
+                                break
+                            except:
+                                continue
+                        pictures = re.findall(r'src=["|' + "']" + "(.*?)['|" + '"]', value) #to find src='()' or src="()"
+                        img_tmp01 = 'src="%s"'
+                        img_tmp02 = "src='%s'"
                         if len(pictures):
-                            value = ""
                             for pic in pictures:
                                 full_img_path = os.path.join(collection_path, pic)
-                                img_tag = img_tmp % full_img_path
-                                value += img_tag
+                                value = value.replace(img_tmp01 % pic, img_tmp01 % full_img_path)
+                                value = value.replace(img_tmp02 % pic, img_tmp02 % full_img_path)
                         card_html = card_html.replace("%s" % field, value)
-                    html += card_html
+                        value = ''
+                    if anyFieldFound:
+                        html += card_html
+                    else:
+                        html += '**************************************************************<br>\n'
+                        html += 'Card Index:' + str(i + 1) + '<br>\n'
+                        html += 'Card type not supported;<br>\n'
+                        html += 'Edit the HTML Template to support these fields: ("' + '-'.join(card.note().keys()) + '").<br>\n'
+                        html += '**************************************************************<br>\n'
 
                 output_html = html_template.replace("{{style}}", self.css_tb.toPlainText())
                 output_html = output_html.replace("{{body}}", html)

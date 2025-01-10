@@ -6,6 +6,7 @@ from pickle import load, dump
 import os
 import re
 import sys
+import base64
 
 html_template = """
     <!DOCTYPE html>
@@ -172,11 +173,10 @@ class AddonDialog(QDialog):
         if path == None:
             return
         deck = self.deck_selection.currentText()
-        query = 'deck:"{}"'.format(deck)
+        # TODO: support query
+        query = 'deck:"{}" card:1'.format(deck)
         cids = mw.col.findCards(query=query)
         collection_path = mw.col.media.dir()
-        if sys.version_info[0] >= 3:
-            path = path[0]
         try:
             with open(path, "w", encoding="utf8") as f:
                 html = ""
@@ -205,8 +205,11 @@ class AddonDialog(QDialog):
                         if len(pictures):
                             for pic in pictures:
                                 full_img_path = os.path.join(collection_path, pic)
-                                value = value.replace(img_tmp01 % pic, img_tmp01 % full_img_path)
-                                value = value.replace(img_tmp02 % pic, img_tmp02 % full_img_path)
+                                with open(full_img_path, "rb") as image_file:
+                                    encoded_string = base64.b64encode(image_file.read()).decode('ascii')
+                                picture_b64 = 'data:image/jpeg;base64,' + encoded_string
+                                value = value.replace(img_tmp01 % pic, img_tmp01 % picture_b64)
+                                value = value.replace(img_tmp02 % pic, img_tmp02 % picture_b64)
                         card_html = card_html.replace("%s" % field, value)
                         value = ''
                     if anyFieldFound:
@@ -221,7 +224,7 @@ class AddonDialog(QDialog):
                 output_html = html_template.replace("{{style}}", self.css_tb.toPlainText())
                 output_html = output_html.replace("{{body}}", html)
                 f.write(output_html)
-                utils.showInfo("Export to HTML successfully")
+                utils.showInfo("Export to HTML successfully %s" % path)
         except IOError:
             utils.showInfo("Filename cannot special characters.")
 
@@ -249,13 +252,13 @@ class SaveFileDialog(QDialog):
         self.filename = self._get_file()
 
     def _get_file(self):
-        options = QFileDialog.Options()
-        options |= QFileDialog.DontUseNativeDialog
         default_filename = self.default_filename.replace('::', '_')
         directory = os.path.join(expanduser("~/Desktop"), default_filename + ".html")
         try:
-            path = QFileDialog.getSaveFileName(self, "Save File", directory, "All Files (*)", options=options)
+            path = QFileDialog.getSaveFileName(self, "Save File", directory, "All Files (*)")
             if path:
+                if sys.version_info[0] >= 3:
+                    return path[0]
                 return path
             else:
                 utils.showInfo("Cannot open this file.")
@@ -266,7 +269,7 @@ class SaveFileDialog(QDialog):
 
 def display_dialog():
     dialog = AddonDialog()
-    dialog.exec_()
+    dialog.open()
     
 action = QAction("Export deck to html", mw)
 action.setShortcut("Ctrl+M")

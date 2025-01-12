@@ -18,12 +18,12 @@ html_template = """
         </style>
     </head>
     <body>
+    <ul>
     {{body}}
+    </ul>
     </body>
     </html>
 """
-
-delimiter = "####"
 
 class AddonDialog(QDialog):
 
@@ -72,19 +72,25 @@ class AddonDialog(QDialog):
         layout.addWidget(deck_label, 1, 0, 1, 1)
         layout.addWidget(self.deck_selection, 1, 1, 1, 2)
 
+        query_label = QLabel("Query")
+        self.query_tb = QLineEdit(self)
+        self.query_tb.resize(380,10)
+        layout.addWidget(query_label, 2, 0, 1, 1)
+        layout.addWidget(self.query_tb, 2, 1, 1, 2)
+
         css_label = QLabel('CSS')
         self.css_tb = QTextEdit(self)
         self.css_tb.resize(380,60)
         self.css_tb.setPlainText(self._setup_css())
-        layout.addWidget(css_label, 2, 0, 1, 1)
-        layout.addWidget(self.css_tb, 2, 1, 1, 2)
+        layout.addWidget(css_label, 3, 0, 1, 1)
+        layout.addWidget(self.css_tb, 3, 1, 1, 2)
 
         html_label = QLabel('HTML')
         self.html_tb = QTextEdit(self)
         self.html_tb.resize(380,60)
         self.html_tb.setPlainText(self._setup_html())
-        layout.addWidget(html_label, 3, 0, 1, 1)
-        layout.addWidget(self.html_tb, 3, 1, 1, 2)
+        layout.addWidget(html_label, 4, 0, 1, 1)
+        layout.addWidget(self.html_tb, 4, 1, 1, 2)
 
         # Main button box
         ok_btn = QPushButton("Export")
@@ -106,12 +112,20 @@ class AddonDialog(QDialog):
         self.setLayout(main_layout)
         self.setMinimumWidth(360)
         self.setWindowTitle('Find words and create deck')
+        self._select_deck()
 
 
     def _select_deck(self):
         self.css_tb.setPlainText(self._setup_css())
         self.html_tb.setPlainText(self._setup_html())
+        self.query_tb.setText(self._setup_query())
 
+    def _setup_query(self):
+        deck = self.deck_selection.currentText()
+        try:
+            return self.config[deck]['query_text']
+        except:
+            return 'deck:"{}"'.format(deck)
 
     def _setup_css(self):
         deck = self.deck_selection.currentText()
@@ -126,12 +140,12 @@ class AddonDialog(QDialog):
         try:
             return self.config[deck]['html_text']
         except:
-            template = ""
+            template = "<li>\n"
             template += '<div class="id">{{id}}</div>\n'
             fields = self._select_fields(self.deck_selection.currentText())
             for idx, field in enumerate(fields):
                 template += '<div class="field%d">{{%s}}</div>\n' % (idx, field)
-            template += '-----------------------------------<br>\n'
+            template += '</li>\n'
             return template
 
 
@@ -139,6 +153,7 @@ class AddonDialog(QDialog):
         self.config[self.deck_selection.currentText()] = {}
         self.config[self.deck_selection.currentText()]['html_text'] = self.html_tb.toPlainText()
         self.config[self.deck_selection.currentText()]['css_text'] = self.css_tb.toPlainText()
+        self.config[self.deck_selection.currentText()]['query_text'] = self.query_tb.text()
         dump(self.config, open(self.config_file, 'wb'))
         utils.showInfo("Config saved")
 
@@ -153,7 +168,7 @@ class AddonDialog(QDialog):
 
 
     def _select_fields(self, deck):
-        query = 'deck:"{}"'.format(deck)
+        query = self.query_tb.text()
         try:
             card_id = mw.col.findCards(query=query)[0]
         except:
@@ -172,9 +187,7 @@ class AddonDialog(QDialog):
         path = dialog.filename
         if path == None:
             return
-        deck = self.deck_selection.currentText()
-        # TODO: support query
-        query = 'deck:"{}" card:1'.format(deck)
+        query = self.query_tb.text()
         cids = mw.col.findCards(query=query)
         collection_path = mw.col.media.dir()
         try:
@@ -275,4 +288,3 @@ action = QAction("Export deck to html", mw)
 action.setShortcut("Ctrl+M")
 action.triggered.connect(display_dialog)
 mw.form.menuTools.addAction(action)
-
